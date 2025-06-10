@@ -6,7 +6,7 @@ const fs = require("fs");
 const { removeDuplicates } = require('./database');
 // Middleware
 app.use(cors());
-app.use(express.json());
+
 
 // Helper Functions
 const createVariationDish = (dish, variation) => ({
