@@ -67,45 +67,51 @@ app.get('/', (req, res) => {
 // Get all dishes
 
 
-app.get('/api/dishes', async (req, res) => {
-  try {
-    await ensureDbConnection();
-    const db = await getDatabase(); // make sure this is a `Promise`
-    const dishes = await db.collection('dishes').find({}).toArray();
-    res.json({ success: true, count: dishes.length, dishes });
-  } catch (error) {
-    console.error("❌ DB Error:", error); // <-- log error details
-    res.status(500).json({ success: false, message: "Database error", error: error.message });
-  }
-});
 // app.get('/api/dishes', async (req, res) => {
-//     try {
-//         const db = getDatabase();
-//         const dishes = await db.collection('dishes').find({}).toArray();
-
-//         // Expand variations as separate dishes
-//         let allDishes = [...dishes];
-//         dishes.forEach(dish => {
-//             if (dish.variations) {
-//                 dish.variations.forEach(variation => {
-//                     allDishes.push(createVariationDish(dish, variation));
-//                 });
-//             }
-//         });
-
-//         res.json({
-//             success: true,
-//             count: allDishes.length,
-//             dishes: allDishes
-//         });
-//     } catch (error) {
-//         res.status(500).json({ success: false, message: "Database error" });
-//     }
+//   try {
+//     await ensureDbConnection();
+//     const db = await getDatabase(); // make sure this is a `Promise`
+//     const dishes = await db.collection('dishes').find({}).toArray();
+//     res.json({ success: true, count: dishes.length, dishes });
+//   } catch (error) {
+//     console.error("❌ DB Error:", error); // <-- log error details
+//     res.status(500).json({ success: false, message: "Database error", error: error.message });
+//   }
 // });
+
+
+
+
+app.get('/api/dishes', async (req, res) => {
+    try {
+        await ensureDbConnection();
+        const db = getDatabase();
+        const dishes = await db.collection('dishes').find({}).toArray();
+
+        // Expand variations as separate dishes
+        let allDishes = [...dishes];
+        dishes.forEach(dish => {
+            if (dish.variations) {
+                dish.variations.forEach(variation => {
+                    allDishes.push(createVariationDish(dish, variation));
+                });
+            }
+        });
+
+        res.json({
+            success: true,
+            count: allDishes.length,
+            dishes: allDishes
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: "Database error" });
+    }
+});
 
 // Search dishes (MUST be before /:id route!)
 app.get('/api/dishes/search', async (req, res) => {
     try {
+        await ensureDbConnection();
         const searchTerm = req.query.q;
         if (!searchTerm) {
             return res.status(400).json({ success: false, message: "Search term required. Use ?q=your_search_term" });
@@ -156,6 +162,7 @@ app.get('/api/dishes/search', async (req, res) => {
 // Get specific dish by ID
 app.get('/api/dishes/:id', async (req, res) => {
     try {
+        await ensureDbConnection();
         const db = getDatabase();
         const dishId = req.params.id;
 
@@ -199,6 +206,7 @@ app.get('/api/dishes/:id', async (req, res) => {
 // Get dishes by country
 app.get('/api/dishes/country/:country', async (req, res) => {
     try {
+        await ensureDbConnection();
         const country = req.params.country;
         const db = getDatabase();
 
@@ -230,6 +238,7 @@ app.get('/api/dishes/country/:country', async (req, res) => {
 // Get random dish
 app.get('/api/random', async (req, res) => {
     try {
+        await ensureDbConnection();
         const db = getDatabase();
         const dishes = await db.collection('dishes').find({}).toArray();
 
