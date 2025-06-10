@@ -10,6 +10,18 @@ app.use(express.json());
 
 
 // Start server and connect to database
+let dbConnection = null;
+
+async function ensureDbConnection() {
+    if (!dbConnection) {
+        dbConnection = await connectToDatabase();
+    }
+    return dbConnection;
+}
+
+
+
+
 
 // Helper Functions
 const createVariationDish = (dish, variation) => ({
@@ -57,6 +69,7 @@ app.get('/', (req, res) => {
 
 app.get('/api/dishes', async (req, res) => {
   try {
+    await ensureDbConnection();
     const db = await getDatabase(); // make sure this is a `Promise`
     const dishes = await db.collection('dishes').find({}).toArray();
     res.json({ success: true, count: dishes.length, dishes });
