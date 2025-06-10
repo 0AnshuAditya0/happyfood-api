@@ -8,6 +8,13 @@ const { removeDuplicates } = require('./database');
 app.use(cors());
 app.use(express.json());
 
+
+// Start server and connect to database
+const PORT = process.env.PORT || 3000;
+async function startServer() {
+    await connectToDatabase();
+}
+
 // Helper Functions
 const createVariationDish = (dish, variation) => ({
     id: `${dish.id}-${variation.name.toLowerCase().replace(/\s+/g, '-')}`,
@@ -351,11 +358,8 @@ app.get('/cleanup-duplicates', async (req, res) => {
 
 
 
-// Start server and connect to database
-const PORT = process.env.PORT || 3000;
 
-async function startServer() {
-    await connectToDatabase();
-}
+
+
 module.exports = app;
 startServer();
