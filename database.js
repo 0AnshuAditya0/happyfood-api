@@ -4,7 +4,7 @@ require('dotenv').config();
 const password = encodeURIComponent(process.env.MONGO_PASSWORD);
 
 // MongoDB connection string
-const connectionString = `mongodb+srv://happyfood-admin:${password}@happyfood-cluster.rzidvqb.mongodb.net/happyfood?retryWrites=true&w=majority&appName=happyfood-cluster`;
+const connectionString = `mongodb+srv://happyfood-admin:@nshU2004@happyfood-cluster.rzidvqb.mongodb.net/happyfood?retryWrites=true&w=majority&appName=happyfood-cluster`;
 
 let db;
 let client;
