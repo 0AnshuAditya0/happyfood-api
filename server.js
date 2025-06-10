@@ -344,9 +344,7 @@ const PORT = process.env.PORT || 3000;
 
 async function startServer() {
     await connectToDatabase();
-    app.listen(PORT, () => {
-        console.log(`🍽️ HappyFood API running on port ${PORT}`);
-        console.log(`📡 Database: MongoDB Atlas Connected`);
+    
 
     });
 }
