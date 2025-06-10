@@ -346,7 +346,7 @@ async function startServer() {
     await connectToDatabase();
     
 
-    });
+    
 }
 
 startServer();
