@@ -10,10 +10,6 @@ app.use(express.json());
 
 
 // Start server and connect to database
-const PORT = process.env.PORT || 3000;
-async function startServer() {
-    await connectToDatabase();
-}
 
 // Helper Functions
 const createVariationDish = (dish, variation) => ({
@@ -362,4 +358,4 @@ app.get('/cleanup-duplicates', async (req, res) => {
 
 
 module.exports = app;
-startServer();
+
