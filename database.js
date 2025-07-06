@@ -302,49 +302,39 @@ async function searchDishes(criteria = {}) {
 /**
  * ✅ NEW: Clean up duplicate dishes
  */
-async function removeDuplicates() {
-    try {
-        if (!db) {
-            throw new Error('Database not connected');
-        }
-        
-        console.log('🧹 Starting duplicate cleanup...');
-        
-        const allDishes = await db.collection('dishes').find({}).toArray();
-        const uniqueDishes = [];
-        const seenIds = new Set();
-        
-        for (const dish of allDishes) {
-            if (!seenIds.has(dish.id)) {
-                uniqueDishes.push(dish);
-                seenIds.add(dish.id);
-            }
-        }
-        
-        const duplicateCount = allDishes.length - uniqueDishes.length;
-        
-        if (duplicateCount > 0) {
-            // Clear and re-insert unique dishes
-            await db.collection('dishes').deleteMany({});
-            await db.collection('dishes').insertMany(uniqueDishes);
-            
-            console.log(`✅ Removed ${duplicateCount} duplicate dishes`);
-            console.log(`📊 Database now has ${uniqueDishes.length} unique dishes`);
-        } else {
-            console.log('✅ No duplicates found');
-        }
-        
-        return {
-            originalCount: allDishes.length,
-            uniqueCount: uniqueDishes.length,
-            duplicatesRemoved: duplicateCount
-        };
-        
-    } catch (error) {
-        console.error('❌ Error removing duplicates:', error.message);
-        throw error;
+ async function removeDuplicates() {
+  const db = getDatabase();
+  const collection = db.collection('dishes');
+
+  const allDishes = await collection.find({}).toArray();
+
+  const seenNames = new Set();
+  const duplicateIds = [];
+
+  for (const dish of allDishes) {
+    const dishName = dish.name.trim().toLowerCase(); // normalize casing
+    if (seenNames.has(dishName)) {
+      duplicateIds.push(dish._id); // mark for deletion
+    } else {
+      seenNames.add(dishName);
     }
+  }
+
+  if (duplicateIds.length === 0) {
+    return { message: "🎉 No duplicates found by name!" };
+  }
+
+  const result = await collection.deleteMany({ _id: { $in: duplicateIds } });
+
+  return {
+    message: `🧹 Removed ${result.deletedCount} duplicate dishes by name`,
+    deletedCount: result.deletedCount
+  };
 }
+
+
+
+
 
 // Graceful shutdown
 process.on('SIGINT', async () => {
