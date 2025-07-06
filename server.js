@@ -9,21 +9,6 @@ const { removeDuplicates } = require('./database');
 app.use(cors());
 app.use(express.json());
 
-
-// Start server and connect to database
-let dbConnection = null;
-
-async function ensureDbConnection() {
-    if (!dbConnection) {
-        dbConnection = await connectToDatabase();
-    }
-    return dbConnection;
-}
-
-
-
-
-
 let dbConnection = null;
 
 async function ensureDbConnection() {
@@ -202,21 +187,48 @@ app.get('/', (req, res) => {
     });
 });
 
-// Get all dishes
+// Enhanced get all dishes with pagination and filtering
 app.get('/api/dishes', async (req, res) => {
     try {
-        const db = getDatabase();
-        const dishes = await db.collection('dishes').find({}).toArray();
+        await ensureDbConnection();
+        
+        const {
+            page = 1,
+            limit = 20,
+            sort = 'name',
+            order = 'asc',
+            'filter[country]': country,
+            'filter[mealType]': mealType,
+            'filter[dietary]': dietary,
+            'filter[allergen]': allergen,
+            'filter[difficulty]': difficulty,
+            'filter[spiceLevel]': spiceLevel,
+            'filter[cookingMethod]': cookingMethod,
+            'calories[min]': caloriesMin,
+            'calories[max]': caloriesMax,
+            'protein[min]': proteinMin,
+            'protein[max]': proteinMax
+        } = req.query;
 
-        // Expand variations as separate dishes
-        let allDishes = [...dishes];
-        dishes.forEach(dish => {
-            if (dish.variations) {
-                dish.variations.forEach(variation => {
-                    allDishes.push(createVariationDish(dish, variation));
-                });
-            }
-        });
+        let allDishes = await getAllDishesWithVariations();
+        
+        // Apply filters
+        const filters = {
+            country, mealType, dietary, allergen, difficulty, 
+            spiceLevel, cookingMethod, caloriesMin, caloriesMax,
+            proteinMin, proteinMax
+        };
+        
+        const filteredDishes = applyFilters(allDishes, filters);
+        
+        // Apply pagination and sorting
+        const result = applyPaginationAndSorting(
+            filteredDishes, 
+            parseInt(page), 
+            parseInt(limit), 
+            sort, 
+            order
+        );
 
         res.json({
             success: true,
@@ -653,18 +665,8 @@ app.get('/api/dishes/country/:country', async (req, res) => {
 // Get random dish
 app.get('/api/random', async (req, res) => {
     try {
-        const db = getDatabase();
-        const dishes = await db.collection('dishes').find({}).toArray();
-
-        // Expand all variations
-        let allDishes = [...dishes];
-        dishes.forEach(dish => {
-            if (dish.variations) {
-                dish.variations.forEach(variation => {
-                    allDishes.push(createVariationDish(dish, variation));
-                });
-            }
-        });
+        await ensureDbConnection();
+        const allDishes = await getAllDishesWithVariations();
 
         if (allDishes.length === 0) {
             return res.status(404).json({ success: false, message: "No dishes found" });
@@ -781,9 +783,11 @@ const PORT = process.env.PORT || 3000;
 
 async function startServer() {
     await connectToDatabase();
-    
-
-    
 }
+
 module.exports = app;
 startServer();
+
+app.listen(PORT, () => {
+    console.log(`🚀 Server is running on http://localhost:${PORT}`);
+});
