@@ -11,12 +11,13 @@ app.use(express.json());
 
 let dbConnection = null;
 
-async function ensureDbConnection() {
-    if (!dbConnection) {
-        dbConnection = await connectToDatabase();
-    }
-    return dbConnection;
-}
+// Remove this function since we'll connect once at startup
+// async function ensureDbConnection() {
+//     if (!dbConnection) {
+//         dbConnection = await connectToDatabase();
+//     }
+//     return dbConnection;
+// }
 
 // Helper Functions
 const createVariationDish = (dish, variation) => ({
@@ -144,18 +145,8 @@ const applyFilters = (dishes, filters) => {
 // Get all dishes with expanded variations
 const getAllDishesWithVariations = async () => {
     const db = getDatabase();
-    const dishes = await db.collection('dishes').find({}).toArray();
-    
-    let allDishes = [...dishes];
-    dishes.forEach(dish => {
-        if (dish.variations) {
-            dish.variations.forEach(variation => {
-                allDishes.push(createVariationDish(dish, variation));
-            });
-        }
-    });
-    
-    return allDishes;
+    // Only return main dishes, not expanded variations
+    return await db.collection('dishes').find({}).toArray();
 };
 
 // API Routes
@@ -190,7 +181,8 @@ app.get('/', (req, res) => {
 // Enhanced get all dishes with pagination and filtering
 app.get('/api/dishes', async (req, res) => {
     try {
-        await ensureDbConnection();
+        // Remove the ensureDbConnection call since we connect at startup
+        // await ensureDbConnection();
         
         const {
             page = 1,
@@ -232,8 +224,8 @@ app.get('/api/dishes', async (req, res) => {
 
         res.json({
             success: true,
-            count: result.dishes.length,
-            totalCount: result.pagination.totalItems,
+            count: result.dishes.length,        // Number of dishes in current page
+            totalCount: result.pagination.totalItems, // Total dishes after filtering
             dishes: result.dishes,
             pagination: result.pagination
         });
@@ -245,7 +237,7 @@ app.get('/api/dishes', async (req, res) => {
 // Search dishes (MUST be before /:id route!)
 app.get('/api/dishes/search', async (req, res) => {
     try {
-        await ensureDbConnection();
+        // Remove ensureDbConnection call
         const searchTerm = req.query.q;
         if (!searchTerm) {
             return res.status(400).json({ success: false, message: "Search term required. Use ?q=your_search_term" });
@@ -296,7 +288,6 @@ app.get('/api/dishes/search', async (req, res) => {
 // Get dishes by dietary requirement
 app.get('/api/dishes/dietary/:diet', async (req, res) => {
     try {
-        await ensureDbConnection();
         const diet = req.params.diet.toLowerCase();
         const allDishes = await getAllDishesWithVariations();
         
@@ -320,7 +311,6 @@ app.get('/api/dishes/dietary/:diet', async (req, res) => {
 // Get dishes by allergen-free
 app.get('/api/dishes/allergens/:allergen', async (req, res) => {
     try {
-        await ensureDbConnection();
         const allergen = req.params.allergen.toLowerCase();
         const allDishes = await getAllDishesWithVariations();
         
@@ -344,7 +334,6 @@ app.get('/api/dishes/allergens/:allergen', async (req, res) => {
 // Get dishes by meal type
 app.get('/api/dishes/meal-type/:type', async (req, res) => {
     try {
-        await ensureDbConnection();
         const mealType = req.params.type.toLowerCase();
         const allDishes = await getAllDishesWithVariations();
         
@@ -366,7 +355,6 @@ app.get('/api/dishes/meal-type/:type', async (req, res) => {
 // Get dishes by difficulty
 app.get('/api/dishes/difficulty/:level', async (req, res) => {
     try {
-        await ensureDbConnection();
         const difficulty = req.params.level.toLowerCase();
         const allDishes = await getAllDishesWithVariations();
         
@@ -388,7 +376,6 @@ app.get('/api/dishes/difficulty/:level', async (req, res) => {
 // Get dishes by spice level
 app.get('/api/dishes/spice/:level', async (req, res) => {
     try {
-        await ensureDbConnection();
         const spiceLevel = req.params.level.toLowerCase();
         const allDishes = await getAllDishesWithVariations();
         
@@ -410,7 +397,6 @@ app.get('/api/dishes/spice/:level', async (req, res) => {
 // Get dishes by cooking method
 app.get('/api/dishes/cooking-method/:method', async (req, res) => {
     try {
-        await ensureDbConnection();
         const cookingMethod = req.params.method.toLowerCase();
         const allDishes = await getAllDishesWithVariations();
         
@@ -432,7 +418,6 @@ app.get('/api/dishes/cooking-method/:method', async (req, res) => {
 // Get similar dishes
 app.get('/api/dishes/similar/:id', async (req, res) => {
     try {
-        await ensureDbConnection();
         const dishId = req.params.id;
         const allDishes = await getAllDishesWithVariations();
         
@@ -464,7 +449,6 @@ app.get('/api/dishes/similar/:id', async (req, res) => {
 // Get seasonal dishes
 app.get('/api/dishes/seasonal', async (req, res) => {
     try {
-        await ensureDbConnection();
         const allDishes = await getAllDishesWithVariations();
         
         const currentDate = new Date();
@@ -494,7 +478,6 @@ app.get('/api/dishes/seasonal', async (req, res) => {
 // Get healthy dishes
 app.get('/api/dishes/healthy', async (req, res) => {
     try {
-        await ensureDbConnection();
         const allDishes = await getAllDishesWithVariations();
         
         const healthyDishes = allDishes.filter(dish => 
@@ -515,7 +498,6 @@ app.get('/api/dishes/healthy', async (req, res) => {
 // Get quick/easy dishes
 app.get('/api/dishes/quick', async (req, res) => {
     try {
-        await ensureDbConnection();
         const allDishes = await getAllDishesWithVariations();
         
         const quickDishes = allDishes.filter(dish => 
@@ -536,7 +518,6 @@ app.get('/api/dishes/quick', async (req, res) => {
 // Statistics - Countries
 app.get('/api/stats/countries', async (req, res) => {
     try {
-        await ensureDbConnection();
         const allDishes = await getAllDishesWithVariations();
         
         const countryStats = allDishes.reduce((stats, dish) => {
@@ -562,7 +543,6 @@ app.get('/api/stats/countries', async (req, res) => {
 // Statistics - Nutritional
 app.get('/api/stats/nutritional', async (req, res) => {
     try {
-        await ensureDbConnection();
         const allDishes = await getAllDishesWithVariations();
         
         const total = allDishes.length;
@@ -591,7 +571,6 @@ app.get('/api/stats/nutritional', async (req, res) => {
 // Get specific dish by ID
 app.get('/api/dishes/:id', async (req, res) => {
     try {
-        await ensureDbConnection();
         const db = getDatabase();
         const dishId = req.params.id;
 
@@ -633,7 +612,6 @@ app.get('/api/dishes/:id', async (req, res) => {
 // Get dishes by country
 app.get('/api/dishes/country/:country', async (req, res) => {
     try {
-        await ensureDbConnection();
         const country = req.params.country;
         const db = getDatabase();
 
@@ -665,7 +643,6 @@ app.get('/api/dishes/country/:country', async (req, res) => {
 // Get random dish
 app.get('/api/random', async (req, res) => {
     try {
-        await ensureDbConnection();
         const allDishes = await getAllDishesWithVariations();
 
         if (allDishes.length === 0) {
@@ -688,7 +665,7 @@ app.get('/api/random', async (req, res) => {
 app.get("/insert-data", async (req, res) => {
     try {
         const db = getDatabase();
-        const dishes = JSON.parse(fs.readFileSync("dishes_clean.json", "utf-8"));
+        const dishes = JSON.parse(fs.readFileSync("bulky1.json", "utf-8"));
 
         const operations = dishes.map(dish => ({
             updateOne: {
@@ -769,6 +746,26 @@ app.get("/reset-data", async (req, res) => {
     }
 });
 
+app.get("/deleto", async (req, res) => {
+    try {
+        const db = getDatabase();
+        // Delete all documents from the "dishes" collection
+        const result = await db.collection("dishes").deleteMany({});
+        res.json({
+            success: true,
+            message: "🗑️ All data deleted from the database.",
+            deletedCount: result.deletedCount
+        });
+    } catch (error) {
+        console.error("❌ Error Deleting All Data:", error);
+        res.status(500).json({ success: false, message: "Database error" });
+    }
+});
+
+
+
+
+
 app.get('/cleanup-duplicates', async (req, res) => {
     try {
         const result = await removeDuplicates();
@@ -782,12 +779,18 @@ app.get('/cleanup-duplicates', async (req, res) => {
 const PORT = process.env.PORT || 3000;
 
 async function startServer() {
-    await connectToDatabase();
+    try {
+        await connectToDatabase();
+        app.listen(PORT, () => {
+            console.log(`🚀 Server is running on http://localhost:${PORT}`);
+        });
+    } catch (error) {
+        console.error("❌ Failed to start server:", error);
+        process.exit(1);
+    }
 }
 
-module.exports = app;
+// Start the server
 startServer();
 
-app.listen(PORT, () => {
-    console.log(`🚀 Server is running on http://localhost:${PORT}`);
-});
+module.exports = app;
