@@ -4,18 +4,28 @@ const { connectToDatabase, getDatabase, removeDuplicates, isDatabaseConnected } 
 const app = express();
 const fs = require("fs");
 const winston = require('winston');
+const transports = [
+  new winston.transports.Console()
+];
+
+if (process.env.VERCEL !== '1' && process.env.NODE_ENV !== 'production') {
+  // Only use file logging locally or in non-serverless environments
+  const fs = require('fs');
+  if (!fs.existsSync('logs')) {
+    fs.mkdirSync('logs');
+  }
+  transports.push(new winston.transports.File({ filename: 'logs/error.log', level: 'error' }));
+}
+
 const logger = winston.createLogger({
-    level: 'info',
-    format: winston.format.combine(
-        winston.format.timestamp(),
-        winston.format.printf(({ timestamp, level, message, ...meta }) => {
-            return `${timestamp} [${level.toUpperCase()}]: ${message} ${Object.keys(meta).length ? JSON.stringify(meta) : ''}`;
-        })
-    ),
-    transports: [
-        new winston.transports.Console(),
-        new winston.transports.File({ filename: 'logs/error.log', level: 'error' })
-    ]
+  level: 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.printf(({ timestamp, level, message, ...meta }) => {
+      return `${timestamp} [${level.toUpperCase()}]: ${message} ${Object.keys(meta).length ? JSON.stringify(meta) : ''}`;
+    })
+  ),
+  transports
 });
 const Joi = require('joi');
 const NodeCache = require('node-cache');
