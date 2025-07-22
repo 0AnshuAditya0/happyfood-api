@@ -40,6 +40,16 @@ async function connectToDatabase() {
 
         console.log('🔄 Connecting to MongoDB Atlas...');
         client = new MongoClient(connectionString, options);
+        // Add MongoDB client event listeners for robust error handling
+        client.on('close', () => {
+            console.error('❌ MongoDB connection closed!');
+        });
+        client.on('error', (err) => {
+            console.error('❌ MongoDB connection error:', err);
+        });
+        client.on('timeout', () => {
+            console.error('❌ MongoDB connection timeout!');
+        });
         
         // Connect with timeout protection
         await Promise.race([
@@ -332,8 +342,10 @@ async function searchDishes(criteria = {}) {
   };
 }
 
-
-
+// Export a function to check if DB is connected
+function isDatabaseConnected() {
+    return !!db;
+}
 
 
 // Graceful shutdown
@@ -354,5 +366,6 @@ module.exports = {
     getAllDishes,
     getDishById,
     searchDishes,
-    removeDuplicates
+    removeDuplicates,
+    isDatabaseConnected // new
 };

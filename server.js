@@ -1,13 +1,64 @@
 const express = require('express');
 const cors = require('cors');
-const { connectToDatabase, getDatabase } = require('./database');
+const { connectToDatabase, getDatabase, removeDuplicates, isDatabaseConnected } = require('./database');
 const app = express();
 const fs = require("fs");
-const { removeDuplicates } = require('./database');
+const winston = require('winston');
+const logger = winston.createLogger({
+    level: 'info',
+    format: winston.format.combine(
+        winston.format.timestamp(),
+        winston.format.printf(({ timestamp, level, message, ...meta }) => {
+            return `${timestamp} [${level.toUpperCase()}]: ${message} ${Object.keys(meta).length ? JSON.stringify(meta) : ''}`;
+        })
+    ),
+    transports: [
+        new winston.transports.Console(),
+        new winston.transports.File({ filename: 'logs/error.log', level: 'error' })
+    ]
+});
+const Joi = require('joi');
+const NodeCache = require('node-cache');
+const apiCache = new NodeCache({ stdTTL: 120 }); // 2 minutes TTL
+const compression = require('compression');
+
+// Joi schema for recipe validation
+const recipeSchema = Joi.object({
+    name: Joi.string().min(2).max(100).required(),
+    description: Joi.string().min(10).required(),
+    ingredients: Joi.array().items(
+        Joi.object({
+            name: Joi.string().min(1).required(),
+            amount: Joi.string().min(1).required()
+        })
+    ).min(1).required(),
+    image: Joi.string().uri().required(),
+    country: Joi.string().min(2).required(),
+    region: Joi.string().min(2).required(),
+    tags: Joi.array().items(Joi.string()).min(1).required(),
+    difficulty: Joi.string().required(),
+    calories: Joi.number().required(),
+    protein: Joi.number().required(),
+    carbs: Joi.number().required(),
+    fat: Joi.number().required(),
+    fiber: Joi.number().required(),
+    dietaryInfo: Joi.array().items(Joi.string()).min(1).required(),
+    spiceLevel: Joi.string().required(),
+    allergens: Joi.array().items(Joi.string()).required(),
+    cookingMethod: Joi.string().required(),
+    mealType: Joi.string().required(),
+    season: Joi.string().required(),
+    instructions: Joi.string().min(10).required(),
+    variations: Joi.array().items(Joi.object()).required(),
+    cookTime: Joi.number().required(),
+    servings: Joi.number().required(),
+    source: Joi.string().required()
+});
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(compression()); // Enable gzip compression
 
 let dbConnection = null;
 
@@ -80,48 +131,66 @@ const applyPaginationAndSorting = (dishes, page = 1, limit = 20, sort = 'name', 
     };
 };
 
-// Filter dishes helper
+// Enhanced applyFilters: supports multiple values for filters and fuzzy name search
 const applyFilters = (dishes, filters) => {
     return dishes.filter(dish => {
-        // Country filter
-        if (filters.country && !dish.country.toLowerCase().includes(filters.country.toLowerCase())) {
-            return false;
+        // Fuzzy name search (if provided)
+        if (filters.name) {
+            // Fuzzy: allow for typos by using a regex with the letters in order
+            // e.g., 'ape' matches 'apple', 'grape', etc.
+            const pattern = filters.name.split('').join('.*');
+            const regex = new RegExp(pattern, 'i');
+            if (!regex.test(dish.name)) return false;
         }
-        
-        // Meal type filter
-        if (filters.mealType && dish.mealType !== filters.mealType) {
-            return false;
+        // Country filter (multi)
+        if (filters.country) {
+            const countries = Array.isArray(filters.country) ? filters.country : String(filters.country).split(',');
+            if (!countries.some(c => dish.country && dish.country.toLowerCase().includes(c.toLowerCase()))) {
+                return false;
+            }
         }
-        
-        // Dietary info filter
-        if (filters.dietary && !dish.dietaryInfo.some(diet => 
-            diet.toLowerCase().includes(filters.dietary.toLowerCase())
-        )) {
-            return false;
+        // Meal type filter (multi)
+        if (filters.mealType) {
+            const mealTypes = Array.isArray(filters.mealType) ? filters.mealType : String(filters.mealType).split(',');
+            if (!mealTypes.some(mt => dish.mealType && dish.mealType.toLowerCase() === mt.toLowerCase())) {
+                return false;
+            }
         }
-        
-        // Allergen filter
-        if (filters.allergen && dish.allergens.some(allergen => 
-            allergen.toLowerCase().includes(filters.allergen.toLowerCase())
-        )) {
-            return false;
+        // Dietary info filter (multi)
+        if (filters.dietary) {
+            const diets = Array.isArray(filters.dietary) ? filters.dietary : String(filters.dietary).split(',');
+            if (!dish.dietaryInfo || !diets.some(diet => dish.dietaryInfo.some(d => d.toLowerCase().includes(diet.toLowerCase())))) {
+                return false;
+            }
         }
-        
-        // Difficulty filter
-        if (filters.difficulty && dish.difficulty !== filters.difficulty) {
-            return false;
+        // Allergen filter (multi)
+        if (filters.allergen) {
+            const allergens = Array.isArray(filters.allergen) ? filters.allergen : String(filters.allergen).split(',');
+            if (!dish.allergens || !allergens.some(allergen => dish.allergens.some(a => a.toLowerCase().includes(allergen.toLowerCase())))) {
+                return false;
+            }
         }
-        
-        // Spice level filter
-        if (filters.spiceLevel && dish.spiceLevel !== filters.spiceLevel) {
-            return false;
+        // Difficulty filter (multi)
+        if (filters.difficulty) {
+            const diffs = Array.isArray(filters.difficulty) ? filters.difficulty : String(filters.difficulty).split(',');
+            if (!diffs.some(diff => dish.difficulty && dish.difficulty.toLowerCase() === diff.toLowerCase())) {
+                return false;
+            }
         }
-        
-        // Cooking method filter
-        if (filters.cookingMethod && dish.cookingMethod !== filters.cookingMethod) {
-            return false;
+        // Spice level filter (multi)
+        if (filters.spiceLevel) {
+            const spices = Array.isArray(filters.spiceLevel) ? filters.spiceLevel : String(filters.spiceLevel).split(',');
+            if (!spices.some(spice => dish.spiceLevel && dish.spiceLevel.toLowerCase() === spice.toLowerCase())) {
+                return false;
+            }
         }
-        
+        // Cooking method filter (multi)
+        if (filters.cookingMethod) {
+            const methods = Array.isArray(filters.cookingMethod) ? filters.cookingMethod : String(filters.cookingMethod).split(',');
+            if (!methods.some(method => dish.cookingMethod && dish.cookingMethod.toLowerCase() === method.toLowerCase())) {
+                return false;
+            }
+        }
         // Calorie range filter
         if (filters.caloriesMin && dish.calories < parseInt(filters.caloriesMin)) {
             return false;
@@ -129,7 +198,6 @@ const applyFilters = (dishes, filters) => {
         if (filters.caloriesMax && dish.calories > parseInt(filters.caloriesMax)) {
             return false;
         }
-        
         // Protein range filter
         if (filters.proteinMin && dish.protein < parseInt(filters.proteinMin)) {
             return false;
@@ -137,7 +205,13 @@ const applyFilters = (dishes, filters) => {
         if (filters.proteinMax && dish.protein > parseInt(filters.proteinMax)) {
             return false;
         }
-        
+        // Tags filter (multi)
+        if (filters.tags) {
+            const tags = Array.isArray(filters.tags) ? filters.tags : String(filters.tags).split(',');
+            if (!dish.tags || !tags.some(tag => dish.tags.some(t => t.toLowerCase() === tag.toLowerCase()))) {
+                return false;
+            }
+        }
         return true;
     });
 };
@@ -149,40 +223,158 @@ const getAllDishesWithVariations = async () => {
     return await db.collection('dishes').find({}).toArray();
 };
 
+// Helper to build pagination links
+function buildPaginationLinks(req, pagination) {
+    const url = new URL(req.protocol + '://' + req.get('host') + req.originalUrl.split('?')[0]);
+    const params = new URLSearchParams(req.query);
+    const links = {};
+    if (pagination.hasNext) {
+        params.set('page', pagination.currentPage + 1);
+        links.next = url.pathname + '?' + params.toString();
+    }
+    if (pagination.hasPrev) {
+        params.set('page', pagination.currentPage - 1);
+        links.prev = url.pathname + '?' + params.toString();
+    }
+    return links;
+}
+
 // API Routes
 app.get('/', (req, res) => {
     res.json({
         message: "Welcome to HappyFood API! 🍽️",
         version: "3.0.0",
         database: "MongoDB Atlas",
-        endpoints: {
-            "GET /api/dishes": "Get all dishes with pagination & filtering",
-            "GET /api/dishes/:id": "Get specific dish",
-            "GET /api/dishes/search?q=term": "Search dishes",
-            "GET /api/dishes/country/:country": "Get dishes by country",
-            "GET /api/dishes/dietary/:diet": "Get dishes by dietary requirement",
-            "GET /api/dishes/allergens/:allergen": "Get dishes by allergen-free",
-            "GET /api/dishes/meal-type/:type": "Get dishes by meal type",
-            "GET /api/dishes/difficulty/:level": "Get dishes by difficulty",
-            "GET /api/dishes/spice/:level": "Get dishes by spice level",
-            "GET /api/dishes/cooking-method/:method": "Get dishes by cooking method",
-            "GET /api/dishes/similar/:id": "Get similar dishes",
-            "GET /api/dishes/seasonal": "Get seasonal dishes",
-            "GET /api/dishes/healthy": "Get healthy dishes",
-            "GET /api/dishes/quick": "Get quick/easy dishes",
-            "GET /api/stats/countries": "Get dish statistics by country",
-            "GET /api/stats/cuisines": "Get cuisine statistics",
-            "GET /api/stats/nutritional": "Get nutritional statistics",
-            "GET /api/random": "Get random dish"
-        }
+        documentation: "https://github.com/0anshuaditya0/happyfood-api",
+        endpoints: [
+            {
+                method: "GET",
+                path: "/api/dishes",
+                description: "Get all dishes with pagination & advanced filtering (supports ?name=, ?tags=, ?dietary=, etc.)",
+                example: "curl http://localhost:3000/api/dishes?page=1&limit=10&tags=vegan,gluten-free"
+            },
+            {
+                method: "GET",
+                path: "/api/dishes/:id",
+                description: "Get a specific dish by ID",
+                example: "curl http://localhost:3000/api/dishes/pizza-001-margherita-pizza"
+            },
+            {
+                method: "GET",
+                path: "/api/dishes/search?q=term",
+                description: "Fuzzy search dishes by name (typo-tolerant)",
+                example: "curl \"http://localhost:3000/api/dishes/search?q=ape\""
+            },
+            {
+                method: "GET",
+                path: "/api/dishes/country/:country",
+                description: "Get dishes by country",
+                example: "curl http://localhost:3000/api/dishes/country/Italy"
+            },
+            {
+                method: "GET",
+                path: "/api/dishes/dietary/:diet",
+                description: "Get dishes by dietary requirement",
+                example: "curl http://localhost:3000/api/dishes/dietary/vegan"
+            },
+            {
+                method: "GET",
+                path: "/api/dishes/allergens/:allergen",
+                description: "Get allergen-free dishes",
+                example: "curl http://localhost:3000/api/dishes/allergens/peanut"
+            },
+            {
+                method: "GET",
+                path: "/api/dishes/meal-type/:type",
+                description: "Get dishes by meal type",
+                example: "curl http://localhost:3000/api/dishes/meal-type/Dessert"
+            },
+            {
+                method: "GET",
+                path: "/api/dishes/difficulty/:level",
+                description: "Get dishes by difficulty",
+                example: "curl http://localhost:3000/api/dishes/difficulty/Easy"
+            },
+            {
+                method: "GET",
+                path: "/api/dishes/spice/:level",
+                description: "Get dishes by spice level",
+                example: "curl http://localhost:3000/api/dishes/spice/Mild"
+            },
+            {
+                method: "GET",
+                path: "/api/dishes/cooking-method/:method",
+                description: "Get dishes by cooking method",
+                example: "curl http://localhost:3000/api/dishes/cooking-method/Baking"
+            },
+            {
+                method: "GET",
+                path: "/api/dishes/similar/:id",
+                description: "Get similar dishes by ID",
+                example: "curl http://localhost:3000/api/dishes/similar/pizza-001-margherita-pizza"
+            },
+            {
+                method: "GET",
+                path: "/api/dishes/seasonal",
+                description: "Get seasonal dishes",
+                example: "curl http://localhost:3000/api/dishes/seasonal"
+            },
+            {
+                method: "GET",
+                path: "/api/dishes/healthy",
+                description: "Get healthy dishes",
+                example: "curl http://localhost:3000/api/dishes/healthy"
+            },
+            {
+                method: "GET",
+                path: "/api/dishes/quick",
+                description: "Get quick/easy dishes",
+                example: "curl http://localhost:3000/api/dishes/quick"
+            },
+            {
+                method: "GET",
+                path: "/api/stats/countries",
+                description: "Get dish statistics by country",
+                example: "curl http://localhost:3000/api/stats/countries"
+            },
+            {
+                method: "GET",
+                path: "/api/stats/nutritional",
+                description: "Get nutritional statistics",
+                example: "curl http://localhost:3000/api/stats/nutritional"
+            },
+            {
+                method: "GET",
+                path: "/api/random",
+                description: "Get a random dish",
+                example: "curl http://localhost:3000/api/random"
+            },
+            {
+                method: "POST",
+                path: "/api/recipes/share",
+                description: "Share a new recipe (all fields required, see README for schema)",
+                example: "curl -X POST http://localhost:3000/api/recipes/share -H 'Content-Type: application/json' -d '{...}'"
+            },
+            {
+                method: "GET",
+                path: "/health",
+                description: "Health check (DB status)",
+                example: "curl http://localhost:3000/health"
+            }
+        ]
     });
 });
 
 // Enhanced get all dishes with pagination and filtering
 app.get('/api/dishes', async (req, res) => {
     try {
-        // Remove the ensureDbConnection call since we connect at startup
-        // await ensureDbConnection();
+        // Use full URL as cache key (includes query params)
+        const cacheKey = req.originalUrl;
+        const cached = apiCache.get(cacheKey);
+        if (cached) {
+            logger.info(`Cache hit for ${cacheKey}`);
+            return res.json(cached);
+        }
         
         const {
             page = 1,
@@ -196,6 +388,8 @@ app.get('/api/dishes', async (req, res) => {
             'filter[difficulty]': difficulty,
             'filter[spiceLevel]': spiceLevel,
             'filter[cookingMethod]': cookingMethod,
+            'filter[name]': name, // Added for fuzzy search
+            'filter[tags]': tags, // Added for multi-tag search
             'calories[min]': caloriesMin,
             'calories[max]': caloriesMax,
             'protein[min]': proteinMin,
@@ -207,7 +401,7 @@ app.get('/api/dishes', async (req, res) => {
         // Apply filters
         const filters = {
             country, mealType, dietary, allergen, difficulty, 
-            spiceLevel, cookingMethod, caloriesMin, caloriesMax,
+            spiceLevel, cookingMethod, name, tags, caloriesMin, caloriesMax,
             proteinMin, proteinMax
         };
         
@@ -222,14 +416,26 @@ app.get('/api/dishes', async (req, res) => {
             order
         );
 
-        res.json({
+        // Add pagination links
+        const links = buildPaginationLinks(req, result.pagination);
+        const response = {
             success: true,
             count: result.dishes.length,        // Number of dishes in current page
             totalCount: result.pagination.totalItems, // Total dishes after filtering
             dishes: result.dishes,
-            pagination: result.pagination
-        });
+            pagination: {
+                ...result.pagination,
+                ...links
+            }
+        };
+        apiCache.set(cacheKey, response);
+        logger.info(`Cache set for ${cacheKey}`);
+        res.json(response);
     } catch (error) {
+        logger.error("❌ Error:", error.stack || error);
+        if (error.message && error.message.includes('Database not connected')) {
+            return res.status(503).json({ success: false, message: "Database not connected" });
+        }
         res.status(500).json({ success: false, message: "Database error" });
     }
 });
@@ -280,7 +486,7 @@ app.get('/api/dishes/search', async (req, res) => {
             dishes: uniqueDishes
         });
     } catch (error) {
-        console.error('Search error:', error);
+        logger.error('Search error:', error);
         res.status(500).json({ success: false, message: "Database search error" });
     }
 });
@@ -304,6 +510,10 @@ app.get('/api/dishes/dietary/:diet', async (req, res) => {
             dishes: filteredDishes
         });
     } catch (error) {
+        logger.error("❌ Error:", error.stack || error);
+        if (error.message && error.message.includes('Database not connected')) {
+            return res.status(503).json({ success: false, message: "Database not connected" });
+        }
         res.status(500).json({ success: false, message: "Database error" });
     }
 });
@@ -327,6 +537,10 @@ app.get('/api/dishes/allergens/:allergen', async (req, res) => {
             dishes: filteredDishes
         });
     } catch (error) {
+        logger.error("❌ Error:", error.stack || error);
+        if (error.message && error.message.includes('Database not connected')) {
+            return res.status(503).json({ success: false, message: "Database not connected" });
+        }
         res.status(500).json({ success: false, message: "Database error" });
     }
 });
@@ -348,6 +562,10 @@ app.get('/api/dishes/meal-type/:type', async (req, res) => {
             dishes: filteredDishes
         });
     } catch (error) {
+        logger.error("❌ Error:", error.stack || error);
+        if (error.message && error.message.includes('Database not connected')) {
+            return res.status(503).json({ success: false, message: "Database not connected" });
+        }
         res.status(500).json({ success: false, message: "Database error" });
     }
 });
@@ -369,6 +587,10 @@ app.get('/api/dishes/difficulty/:level', async (req, res) => {
             dishes: filteredDishes
         });
     } catch (error) {
+        logger.error("❌ Error:", error.stack || error);
+        if (error.message && error.message.includes('Database not connected')) {
+            return res.status(503).json({ success: false, message: "Database not connected" });
+        }
         res.status(500).json({ success: false, message: "Database error" });
     }
 });
@@ -390,6 +612,10 @@ app.get('/api/dishes/spice/:level', async (req, res) => {
             dishes: filteredDishes
         });
     } catch (error) {
+        logger.error("❌ Error:", error.stack || error);
+        if (error.message && error.message.includes('Database not connected')) {
+            return res.status(503).json({ success: false, message: "Database not connected" });
+        }
         res.status(500).json({ success: false, message: "Database error" });
     }
 });
@@ -411,6 +637,10 @@ app.get('/api/dishes/cooking-method/:method', async (req, res) => {
             dishes: filteredDishes
         });
     } catch (error) {
+        logger.error("❌ Error:", error.stack || error);
+        if (error.message && error.message.includes('Database not connected')) {
+            return res.status(503).json({ success: false, message: "Database not connected" });
+        }
         res.status(500).json({ success: false, message: "Database error" });
     }
 });
@@ -442,6 +672,10 @@ app.get('/api/dishes/similar/:id', async (req, res) => {
             dishes: similarDishes
         });
     } catch (error) {
+        logger.error("❌ Error:", error.stack || error);
+        if (error.message && error.message.includes('Database not connected')) {
+            return res.status(503).json({ success: false, message: "Database not connected" });
+        }
         res.status(500).json({ success: false, message: "Database error" });
     }
 });
@@ -471,6 +705,10 @@ app.get('/api/dishes/seasonal', async (req, res) => {
             dishes: seasonalDishes
         });
     } catch (error) {
+        logger.error("❌ Error:", error.stack || error);
+        if (error.message && error.message.includes('Database not connected')) {
+            return res.status(503).json({ success: false, message: "Database not connected" });
+        }
         res.status(500).json({ success: false, message: "Database error" });
     }
 });
@@ -491,6 +729,10 @@ app.get('/api/dishes/healthy', async (req, res) => {
             dishes: healthyDishes
         });
     } catch (error) {
+        logger.error("❌ Error:", error.stack || error);
+        if (error.message && error.message.includes('Database not connected')) {
+            return res.status(503).json({ success: false, message: "Database not connected" });
+        }
         res.status(500).json({ success: false, message: "Database error" });
     }
 });
@@ -511,6 +753,10 @@ app.get('/api/dishes/quick', async (req, res) => {
             dishes: quickDishes
         });
     } catch (error) {
+        logger.error("❌ Error:", error.stack || error);
+        if (error.message && error.message.includes('Database not connected')) {
+            return res.status(503).json({ success: false, message: "Database not connected" });
+        }
         res.status(500).json({ success: false, message: "Database error" });
     }
 });
@@ -536,6 +782,10 @@ app.get('/api/stats/countries', async (req, res) => {
             countries: sortedStats
         });
     } catch (error) {
+        logger.error("❌ Error:", error.stack || error);
+        if (error.message && error.message.includes('Database not connected')) {
+            return res.status(503).json({ success: false, message: "Database not connected" });
+        }
         res.status(500).json({ success: false, message: "Database error" });
     }
 });
@@ -564,6 +814,10 @@ app.get('/api/stats/nutritional', async (req, res) => {
             }
         });
     } catch (error) {
+        logger.error("❌ Error:", error.stack || error);
+        if (error.message && error.message.includes('Database not connected')) {
+            return res.status(503).json({ success: false, message: "Database not connected" });
+        }
         res.status(500).json({ success: false, message: "Database error" });
     }
 });
@@ -571,6 +825,12 @@ app.get('/api/stats/nutritional', async (req, res) => {
 // Get specific dish by ID
 app.get('/api/dishes/:id', async (req, res) => {
     try {
+        const cacheKey = req.originalUrl;
+        const cached = apiCache.get(cacheKey);
+        if (cached) {
+            logger.info(`Cache hit for ${cacheKey}`);
+            return res.json(cached);
+        }
         const db = getDatabase();
         const dishId = req.params.id;
 
@@ -600,11 +860,18 @@ app.get('/api/dishes/:id', async (req, res) => {
         // Return ONLY the specific dish, not variations
         const { variations, ...dishWithoutVariations } = dish;
 
-        res.json({
+        const response = {
             success: true,
             dish: dishWithoutVariations
-        });
+        };
+        apiCache.set(cacheKey, response);
+        logger.info(`Cache set for ${cacheKey}`);
+        res.json(response);
     } catch (error) {
+        logger.error("❌ Error:", error.stack || error);
+        if (error.message && error.message.includes('Database not connected')) {
+            return res.status(503).json({ success: false, message: "Database not connected" });
+        }
         res.status(500).json({ success: false, message: "Database error" });
     }
 });
@@ -636,6 +903,10 @@ app.get('/api/dishes/country/:country', async (req, res) => {
             dishes: allDishes
         });
     } catch (error) {
+        logger.error("❌ Error:", error.stack || error);
+        if (error.message && error.message.includes('Database not connected')) {
+            return res.status(503).json({ success: false, message: "Database not connected" });
+        }
         res.status(500).json({ success: false, message: "Database error" });
     }
 });
@@ -657,6 +928,10 @@ app.get('/api/random', async (req, res) => {
             dish: randomDish
         });
     } catch (error) {
+        logger.error("❌ Error:", error.stack || error);
+        if (error.message && error.message.includes('Database not connected')) {
+            return res.status(503).json({ success: false, message: "Database not connected" });
+        }
         res.status(500).json({ success: false, message: "Database error" });
     }
 });
@@ -687,7 +962,7 @@ app.get("/insert-data", async (req, res) => {
             }
         });
     } catch (error) {
-        console.error("❌ Error Inserting Data:", error);
+        logger.error("❌ Error Inserting Data:", error);
         res.status(500).json({ success: false, message: "Database error" });
     }
 });
@@ -722,7 +997,7 @@ app.get("/insert-data-check", async (req, res) => {
             }
         });
     } catch (error) {
-        console.error("❌ Error Inserting Data:", error);
+        logger.error("❌ Error Inserting Data:", error);
         res.status(500).json({ success: false, message: "Database error" });
     }
 });
@@ -741,7 +1016,7 @@ app.get("/reset-data", async (req, res) => {
             inserted: result.insertedCount
         });
     } catch (error) {
-        console.error("❌ Error Resetting Data:", error);
+        logger.error("❌ Error Resetting Data:", error);
         res.status(500).json({ success: false, message: "Database error" });
     }
 });
@@ -757,7 +1032,7 @@ app.get("/deleto", async (req, res) => {
             deletedCount: result.deletedCount
         });
     } catch (error) {
-        console.error("❌ Error Deleting All Data:", error);
+        logger.error("❌ Error Deleting All Data:", error);
         res.status(500).json({ success: false, message: "Database error" });
     }
 });
@@ -771,7 +1046,40 @@ app.get('/cleanup-duplicates', async (req, res) => {
         const result = await removeDuplicates();
         res.json({ success: true, result });
     } catch (error) {
+        logger.error("❌ Error cleaning up duplicates:", error);
         res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Recipe sharing endpoint
+app.post('/api/recipes/share', async (req, res) => {
+    try {
+        const { error, value } = recipeSchema.validate(req.body, { abortEarly: false });
+        if (error) {
+            return res.status(400).json({ success: false, message: 'Validation error', details: error.details.map(d => d.message) });
+        }
+        const db = getDatabase();
+        // Generate a unique id for the new recipe
+        const id = `${value.name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`;
+        const newRecipe = { ...value, id };
+        await db.collection('dishes').insertOne(newRecipe);
+        res.json({ success: true, message: 'Recipe shared successfully!', recipe: newRecipe });
+    } catch (error) {
+        logger.error('❌ Error sharing recipe:', error.stack || error);
+        res.status(500).json({ success: false, message: 'Database error' });
+    }
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+    try {
+        if (!isDatabaseConnected()) {
+            return res.status(503).json({ status: 'error', db: 'not connected' });
+        }
+        res.json({ status: 'ok', db: 'connected' });
+    } catch (e) {
+        logger.error("❌ Health check failed:", e);
+        res.status(500).json({ status: 'error', db: 'not connected', error: e.message });
     }
 });
 
@@ -781,11 +1089,10 @@ const PORT = process.env.PORT || 3000;
 async function startServer() {
     try {
         await connectToDatabase();
-        app.listen(PORT, () => {
-            console.log(`🚀 Server is running on http://localhost:${PORT}`);
-        });
+        logger.info(`🚀 Server is running on http://localhost:${PORT}`);
+        app.listen(PORT);
     } catch (error) {
-        console.error("❌ Failed to start server:", error);
+        logger.error("❌ Failed to start server:", error);
         process.exit(1);
     }
 }
