@@ -1,0 +1,44 @@
+[
+  {
+    "id": "pizza-001",
+    "name": "Pizza",
+    "description": "A delicious Italian dish with cheese and tomato sauce.",
+    "country": "Italy",
+    "region": "Naples",
+    "image": "https://cdn.pixabay.com/photo/2017/06/27/08/41/pizza-2446700_150.jpg",
+    "tags": ["italian", "cheese", "tomato", "pizza"],
+    "difficulty": "Medium",
+    "calories": 500,
+    "protein": 20,
+    "carbs": 50,
+    "fat": 15,
+    "fiber": 5,
+    "dietaryInfo": ["Vegetarian"],
+    "spiceLevel": "Mild",
+    "allergens": ["Gluten", "Dairy"],
+    "cookingMethod": "Baking",
+    "mealType": "Dinner",
+    "season": "All",
+    "popularity": 95,
+    "variations": [
+      {
+        "id": "pizza-001-pepperoni",
+        "name": "Pepperoni Pizza",
+        "description": "A classic pizza topped with pepperoni slices.",
+        "image": "https://cdn.pixabay.com/photo/2015/04/08/13/14/pizza-712667_150.jpg",
+        "calories": 600,
+        "spiceLevel": "Medium",
+        "dietaryInfo": []
+      },
+      {
+        "id": "pizza-001-margherita",
+        "name": "Margherita Pizza",
+        "description": "A simple pizza with fresh basil, mozzarella, and tomato sauce.",
+        "image": "https://cdn.pixabay.com/photo/2020/09/18/16/05/pizza-5582236_150.jpg",
+        "calories": 450,
+        "spiceLevel": "Mild",
+        "dietaryInfo": ["Vegetarian"]
+      }
+    ]
+  }
+]

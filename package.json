@@ -1,0 +1,55 @@
+{
+  "name": "happyfood-nextjs",
+  "version": "3.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "scrape:themealdb": "node scripts/scrapers/themealdb-scraper.js",
+    "scrape:spoonacular": "node scripts/scrapers/spoonacular-scraper.js",
+    "scrape:edamam": "node scripts/scrapers/edamam-scraper.js",
+    "scrape:all": "node scripts/run-all-scrapers.js",
+    "upload:batch": "node scripts/upload-pipeline.js",
+    "setup:indexes": "node scripts/setup-indexes.js",
+    "dedupe": "node scripts/utils/checkdup.js",
+    "cron:start": "node scripts/cron-scraper.js",
+    "find:duplicates": "node scripts/find-duplicates.js",
+    "remove:ingredient": "node scripts/remove-by-ingredient.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "joi": "^17.13.3",
+    "mongodb": "^6.20.0",
+    "next": "^15.4.5",
+    "node-cache": "^5.1.2",
+    "node-cron": "^4.2.1",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "string-similarity": "^4.0.4",
+    "swr": "^2.3.7",
+    "winston": "^3.18.3"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.2.0",
+    "autoprefixer": "^10.4.21",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "eslint": "^9.17.0",
+    "eslint-config-next": "15.4.5",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.0"
+  },
+  "keywords": [
+    "nextjs",
+    "api",
+    "recipes",
+    "food",
+    "mongodb",
+    "vercel"
+  ],
+  "author": "Anshu Baka",
+  "license": "MIT",
+  "description": "HappyFood API - A modern, feature-rich RESTful API for discovering, filtering, and sharing global recipes. Built with Next.js and MongoDB."
+}
