@@ -26,7 +26,115 @@ class UploadPipeline {
     }
   }
 
-  // ... (checkDuplicate and uploadBatch remain mostly the same, but logging calls need care) ...
+  async checkDuplicate(recipe) {
+    // 1. Exact match check (name + country)
+    const exactMatch = await this.collection.findOne({
+      name: recipe.name,
+      country: recipe.country
+    });
+
+    if (exactMatch) return { isDuplicate: true, type: 'exact' };
+
+    // 2. Fuzzy matching
+    // Find recipes from same country to limit search space
+    // Optimization: Only select name to reduce data transfer
+    const sameCountryRecipes = await this.collection
+      .find({ country: recipe.country })
+      .project({ name: 1 })
+      .toArray();
+    
+    // Check similarity
+    for (const existing of sameCountryRecipes) {
+      const similarity = stringSimilarity.compareTwoStrings(
+        (recipe.name || '').toLowerCase(),
+        (existing.name || '').toLowerCase()
+      );
+      
+      if (similarity > 0.85) {
+        console.log(`⚠️  Similar: "${recipe.name}" vs "${existing.name}" (${(similarity * 100).toFixed(0)}% match)`);
+        return { isDuplicate: true, type: 'fuzzy' };
+      }
+    }
+
+    return { isDuplicate: false };
+  }
+
+  async uploadBatch(recipes, batchSize = 50) {
+    if (!this.validateDish) await this.init();
+
+    const stats = {
+      total: recipes.length,
+      success: 0,
+      failed: 0,
+      exactDuplicates: 0,
+      fuzzyDuplicates: 0,
+      batchCount: Math.ceil(recipes.length / batchSize)
+    };
+
+    const batches = this.chunkArray(recipes, batchSize);
+
+    console.log(`🚀 Starting upload of ${recipes.length} recipes in ${stats.batchCount} batches...`);
+
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
+      console.log(`📦 Processing Batch ${i + 1}/${stats.batchCount} (${batch.length} items)...`);
+
+      for (const recipe of batch) {
+        try {
+          // 1. Check Duplicate
+          const dupResult = await this.checkDuplicate(recipe);
+          if (dupResult.isDuplicate) {
+            if (dupResult.type === 'exact') stats.exactDuplicates++;
+            if (dupResult.type === 'fuzzy') stats.fuzzyDuplicates++;
+            
+            if (dupResult.type === 'exact') {
+               console.log(`⚠️  Duplicate (Exact): "${recipe.name}" (${recipe.country})`);
+               // Log exact duplicate
+               await logger.log('duplicate', `Exact duplicate skipped: ${recipe.name}`, { country: recipe.country, type: 'exact' });
+            } else if (dupResult.type === 'fuzzy') {
+               // Log fuzzy duplicate (already logged to console in checkDuplicate)
+               await logger.log('duplicate', `Fuzzy duplicate skipped: ${recipe.name}`, { country: recipe.country, type: 'fuzzy' });
+            }
+            continue;
+          }
+
+          // 2. Validate Schema
+          const { error, value } = this.validateDish(recipe);
+          if (error) {
+            throw new Error(`Validation Error: ${error.message}`);
+          }
+
+          // 3. Insert
+          await this.collection.insertOne(value);
+          stats.success++;
+          console.log(`✅ Uploaded: "${value.name}"`);
+
+        } catch (err) {
+          stats.failed++;
+          console.error(`❌ Failed: "${recipe.name}" - ${err.message}`);
+          await logger.log('error', `Upload failed: ${recipe.name}`, { error: err.message });
+          await this.saveFailedRecipe(recipe, err.message);
+        }
+      }
+
+      // Delay between batches
+      if (i < batches.length - 1) {
+        console.log(`⏳ Waiting 2 seconds...`);
+        await this.delay(2000);
+      }
+    }
+
+    this.logSummary(stats);
+    
+    await logger.log('scrape', `Batch upload processed`, { 
+      total: stats.total, 
+      success: stats.success, 
+      duplicates: stats.exactDuplicates + stats.fuzzyDuplicates,
+      failed: stats.failed 
+    });
+
+    return stats;
+  }
 
   async resumeUpload(failedJsonPath) {
     try {
