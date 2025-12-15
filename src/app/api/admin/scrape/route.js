@@ -14,18 +14,19 @@ export async function POST(request) {
     
     let scriptPath;
     if (source === 'themealdb') {
-      scriptPath = 'scripts/scrapers/themealdb-scraper.js';
+        scriptPath = path.join(process.cwd(), 'scripts', 'scrapers', 'themealdb-scraper.js');
     } else if (source === 'spoonacular') {
-        scriptPath = 'scripts/scrapers/spoonacular-scraper.js';
+        scriptPath = path.join(process.cwd(), 'scripts', 'scrapers', 'spoonacular-scraper.js');
     } else if (source === 'edamam') {
-        scriptPath = 'scripts/scrapers/edamam-scraper.js';
+        scriptPath = path.join(process.cwd(), 'scripts', 'scrapers', 'edamam-scraper.js');
     } else if (source === 'cleanup') {
-        scriptPath = 'scripts/find-duplicates.js'; // Example mapping for cleanup button
+        scriptPath = path.join(process.cwd(), 'scripts', 'find-duplicates.js');
     } else {
         return NextResponse.json({ success: false, message: 'Invalid action/source' }, { status: 400 });
     }
 
-    const fullPath = path.join(process.cwd(), scriptPath);
+    // fullPath is now scriptPath because we constructed it absolutely above
+    const fullPath = scriptPath;
     
     console.log(`[Admin] Spawning: node ${fullPath}`);
 
