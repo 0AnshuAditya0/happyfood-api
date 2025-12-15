@@ -12,24 +12,24 @@ export async function POST(request) {
 
     const { source } = body;
     
-    let scriptPath;
-    if (source === 'themealdb') {
-        scriptPath = path.join(process.cwd(), 'scripts', 'scrapers', 'themealdb-scraper.js');
-    } else if (source === 'spoonacular') {
-        scriptPath = path.join(process.cwd(), 'scripts', 'scrapers', 'spoonacular-scraper.js');
-    } else if (source === 'edamam') {
-        scriptPath = path.join(process.cwd(), 'scripts', 'scrapers', 'edamam-scraper.js');
-    } else if (source === 'cleanup') {
-        scriptPath = path.join(process.cwd(), 'scripts', 'find-duplicates.js');
-    } else {
+    // Define script names only; rely on runtime caching of process.cwd()
+    const scriptMap = {
+      themealdb: 'scripts/scrapers/themealdb-scraper.js',
+      spoonacular: 'scripts/scrapers/spoonacular-scraper.js',
+      edamam: 'scripts/scrapers/edamam-scraper.js',
+      cleanup: 'scripts/find-duplicates.js'
+    };
+
+    if (!scriptMap[source]) {
         return NextResponse.json({ success: false, message: 'Invalid action/source' }, { status: 400 });
     }
 
-    // fullPath is now scriptPath because we constructed it absolutely above
-    const fullPath = scriptPath;
+    const relativeScriptPath = scriptMap[source];
+    // Use path.resolve to ensure absolute path, but do it in a way that bundlers ignore
+    // process.cwd() is safe at runtime.
+    const fullPath = path.resolve(process.cwd(), relativeScriptPath);
     
     console.log(`[Admin] Spawning: node ${fullPath}`);
-
 
     const child = spawn('node', [fullPath], {
       detached: true,
