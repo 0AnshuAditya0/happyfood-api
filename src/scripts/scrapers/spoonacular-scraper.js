@@ -69,7 +69,58 @@ class SpoonacularScraper extends BaseScraper {
     }
   }
 
-  // ... (rest of methods)
+  async fetchRandom(number) {
+    const url = `${this.baseUrl}/random?number=${number}&apiKey=${this.apiKey}&includeNutrition=true`;
+    const res = await fetch(url);
+    if (res.status === 402) {
+      console.error('❌ Spoonacular Quota Exceeded');
+      return [];
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return data.recipes || [];
+  }
+
+  transform(raw) {
+    const ingredients = raw.extendedIngredients.map(ing => ({
+      name: ing.nameClean || ing.name,
+      amount: `${ing.amount} ${ing.unit}`
+    }));
+    
+    // Instructions might be HTML or simple text
+    let instructions = raw.instructions || raw.summary || 'No instructions provided.';
+    instructions = instructions.replace(/<[^>]*>?/gm, ''); // Strip HTML tags
+
+    const description = raw.summary ? raw.summary.replace(/<[^>]*>?/gm, '').substring(0, 200) + '...' : raw.title;
+
+    return {
+      id: `spoonacular-${raw.id}`,
+      name: raw.title,
+      description: description,
+      country: 'International', // Spoonacular mostly doesn't enforce country, usually Western
+      region: null,
+      tags: raw.dishTypes || [],
+      difficulty: this.estimateDifficulty(instructions),
+      calories: raw.nutrition?.nutrients?.find(n => n.name === 'Calories')?.amount || this.estimateCalories(ingredients),
+      protein: raw.nutrition?.nutrients?.find(n => n.name === 'Protein')?.amount || 0,
+      carbs: raw.nutrition?.nutrients?.find(n => n.name === 'Carbohydrates')?.amount || 0,
+      fat: raw.nutrition?.nutrients?.find(n => n.name === 'Fat')?.amount || 0,
+      fiber: raw.nutrition?.nutrients?.find(n => n.name === 'Fiber')?.amount || 0,
+      
+      dietaryInfo: [...(raw.diets || []), ...this.detectDietaryInfo(ingredients)],
+      spiceLevel: 'Medium',
+      allergens: this.detectAllergens(ingredients),
+      cookingMethod: 'Various',
+      mealType: raw.dishTypes && raw.dishTypes.length > 0 ? raw.dishTypes[0] : 'Dinner',
+      season: 'All',
+      instructions: instructions,
+      variations: [],
+      cookTime: raw.readyInMinutes || 30,
+      servings: raw.servings || 4,
+      source: raw.sourceUrl || 'Spoonacular',
+      image: raw.image
+    };
+  }
 
 }
 
