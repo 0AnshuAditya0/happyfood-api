@@ -9,13 +9,7 @@ const nextConfig = {
       { protocol: 'https', hostname: 'edamam-product-images.s3.amazonaws.com' }
     ],
   },
-  webpack: (config) => {
-    config.resolve.alias = {
-      ...config.resolve.alias,
-      '@': require('path').resolve(process.cwd(), 'src'),
-    };
-    return config;
-  },
+
   async headers() {
     return [
       {

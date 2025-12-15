@@ -51,3 +51,52 @@ export async function getDatabase() {
  * Export the client promise for use in other parts of the app (e.g. NextAuth)
  */
 export default clientPromise;
+
+/**
+ * Helper to check if database is connected
+ * @returns {boolean}
+ */
+export function isDatabaseConnected() {
+  return !!client;
+}
+
+/**
+ * Helper to connect to database (alias for clientPromise for compatibility)
+ * @returns {Promise<import('mongodb').MongoClient>}
+ */
+export const connectToDatabase = async () => {
+    return clientPromise;
+};
+
+/**
+ * Remove duplicate dishes by name
+ */
+export async function removeDuplicates() {
+  const db = await getDatabase();
+  const collection = db.collection('dishes');
+
+  const allDishes = await collection.find({}).toArray();
+
+  const seenNames = new Set();
+  const duplicateIds = [];
+
+  for (const dish of allDishes) {
+    const dishName = dish.name.trim().toLowerCase();
+    if (seenNames.has(dishName)) {
+      duplicateIds.push(dish._id);
+    } else {
+      seenNames.add(dishName);
+    }
+  }
+
+  if (duplicateIds.length === 0) {
+    return { message: "🎉 No duplicates found by name!" };
+  }
+
+  const result = await collection.deleteMany({ _id: { $in: duplicateIds } });
+
+  return {
+    message: `🧹 Removed ${result.deletedCount} duplicate dishes by name`,
+    deletedCount: result.deletedCount
+  };
+}
