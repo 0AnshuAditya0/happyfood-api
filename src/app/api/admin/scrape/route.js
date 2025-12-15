@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server';
-import { spawn } from 'child_process';
-import path from 'path';
+import { getDatabase } from '@/lib/database';
+
+// Import scrapers directly
+import TheMealDBScraper from '@/scripts/scrapers/themealdb-scraper';
+import SpoonacularScraper from '@/scripts/scrapers/spoonacular-scraper';
+import EdamamScraper from '@/scripts/scrapers/edamam-scraper';
+import findDuplicates from '@/scripts/find-duplicates';
+
+export const maxDuration = 300; // 5 minutes max for Vercel Pro, 10-60s for Hobby (be careful)
 
 export async function POST(request) {
   try {
@@ -11,41 +18,43 @@ export async function POST(request) {
     }
 
     const { source } = body;
+    const db = await getDatabase();
     
-    // Define script names only; rely on runtime caching of process.cwd()
-    const scriptMap = {
-      themealdb: 'scripts/scrapers/themealdb-scraper.js',
-      spoonacular: 'scripts/scrapers/spoonacular-scraper.js',
-      edamam: 'scripts/scrapers/edamam-scraper.js',
-      cleanup: 'scripts/find-duplicates.js'
-    };
+    // We can't await the entire scrape because Vercel functions have short timeouts (10-60s).
+    // Ideally these should be background workers (Vercel cron or QStash), but for now:
+    // We will await them but assume the scraper handles internal timeouts/limits or we rely on "maxDuration" config if using Vercel Pro.
+    // Given user constraints, we'll try to run it. If it times out, Vercel kills it.
 
-    if (!scriptMap[source]) {
+    let message = '';
+
+    if (source === 'themealdb') {
+        const scraper = new TheMealDBScraper();
+        // Run without awaiting fully if we want "fire and forget" usually, 
+        // but Vercel freezes execution after response. So we MUST await.
+        await scraper.run(db);
+        message = 'TheMealDB Scrape Completed';
+    } else if (source === 'spoonacular') {
+        const scraper = new SpoonacularScraper();
+        await scraper.run(db);
+        message = 'Spoonacular Scrape Completed';
+    } else if (source === 'edamam') {
+        const scraper = new EdamamScraper();
+        await scraper.run(db);
+        message = 'Edamam Scrape Completed';
+    } else if (source === 'cleanup') {
+        const duplicates = await findDuplicates(db);
+        message = `Cleanup Scan: Found ${duplicates.length} potential duplicates.`;
+    } else {
         return NextResponse.json({ success: false, message: 'Invalid action/source' }, { status: 400 });
     }
 
-    const relativeScriptPath = scriptMap[source];
-    // Use path.resolve to ensure absolute path, but do it in a way that bundlers ignore
-    // process.cwd() is safe at runtime.
-    const fullPath = path.resolve(process.cwd(), relativeScriptPath);
-    
-    console.log(`[Admin] Spawning: node ${fullPath}`);
-
-    const child = spawn('node', [fullPath], {
-      detached: true,
-      stdio: 'ignore', // Ignore output, or redirect to a log file if needed
-      cwd: process.cwd()
-    });
-    
-    child.unref();
-
     return NextResponse.json({
       success: true,
-      message: `Started ${source} process.`
+      message: message
     });
 
   } catch (error) {
     console.error('Scrape Trigger Error:', error);
-    return NextResponse.json({ success: false, message: 'Failed to start process' }, { status: 500 });
+    return NextResponse.json({ success: false, message: 'Failed to complete process: ' + error.message }, { status: 500 });
   }
 }
