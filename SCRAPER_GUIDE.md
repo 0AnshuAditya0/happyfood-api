@@ -59,8 +59,7 @@ npm run scrape:spoonacular
 npm run scrape:all
 ```
 
-### Admin Dashboard
-Login to `/admin` (Password: `happyfood2024`) to trigger scrapers via UI.
+
 
 ## 6. API Documentation
 
